@@ -1,440 +1,232 @@
-import { useEffect, useState } from 'react';
-import {
-  PlusCircle,
-  Pencil,
-  Trash2,
-  TrendingUp,
-  TrendingDown,
-  CalendarDays,
-  X,
-  Wallet,
-} from 'lucide-react';
-import { supabase } from './lib/supabase';
+import { useState, useEffect } from 'react';
+import { Calendar, ShieldCheck, ListChecks, Building2, Database, Loader2, AlertCircle, LayoutDashboard } from 'lucide-react';
+import CalendarView from './components/CalendarView';
+import BalanceCheck from './components/BalanceCheck';
+import FixedItemManager from './components/FixedItemManager';
+import AccountManager from './components/AccountManager';
+import DashboardView from './components/DashboardView';
+import { checkTablesExist, setupTables } from './lib/supabase';
 
-interface FixedItem {
-  id: string;
-  name: string;
-  amount: number;
-  type: 'income' | 'expense';
-  day_of_month: number | null;
-  is_last_day: boolean;
-  created_at: string;
-}
+type Tab = 'dashboard' | 'calendar' | 'balance' | 'items' | 'accounts';
 
-interface FormData {
-  name: string;
-  amount: string;
-  type: 'income' | 'expense';
-  day: string; // '1'–'31' or 'last'
-}
+const SIDEBAR_ITEMS: { id: Tab; label: string; icon: typeof Calendar }[] = [
+  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
+  { id: 'calendar', label: '달력', icon: Calendar },
+  { id: 'balance', label: '잔고확인', icon: ShieldCheck },
+  { id: 'items', label: '항목관리', icon: ListChecks },
+  { id: 'accounts', label: '통장관리', icon: Building2 },
+];
 
-const EMPTY_FORM: FormData = { name: '', amount: '', type: 'expense', day: '1' };
-
-function getLastDayOfCurrentMonth(): number {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-}
-
-function formatDay(item: FixedItem): string {
-  if (item.is_last_day) return '말일';
-  return `${item.day_of_month}일`;
-}
-
-function resolveDay(item: FixedItem): number {
-  return item.is_last_day ? getLastDayOfCurrentMonth() : (item.day_of_month ?? 1);
-}
-
-function formatKRW(amount: number): string {
-  return amount.toLocaleString('ko-KR') + '원';
-}
+const MOBILE_TABS: { id: Tab; label: string; icon: typeof Calendar }[] = [
+  { id: 'calendar', label: '달력', icon: Calendar },
+  { id: 'balance', label: '잔고확인', icon: ShieldCheck },
+  { id: 'items', label: '항목관리', icon: ListChecks },
+  { id: 'accounts', label: '통장관리', icon: Building2 },
+];
 
 export default function App() {
-  const [items, setItems] = useState<FixedItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
-  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [tablesReady, setTablesReady] = useState<boolean | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchItems();
+    checkTablesExist().then(exists => {
+      setTablesReady(exists);
+    });
   }, []);
 
-  async function fetchItems() {
-    setLoading(true);
-    setError(null);
-    const { data, error } = await supabase
-      .from('fixed_items')
-      .select('*')
-      .order('created_at', { ascending: true });
-    if (error) {
-      setError(error.message);
+  const handleSetup = async () => {
+    setSettingUp(true);
+    setSetupError(null);
+    const result = await setupTables();
+    if (result.success) {
+      setTablesReady(true);
     } else {
-      setItems(data ?? []);
+      setSetupError(result.error || '설정에 실패했습니다.');
     }
-    setLoading(false);
-  }
+    setSettingUp(false);
+  };
 
-  function openCreate() {
-    setEditingId(null);
-    setFormData(EMPTY_FORM);
-    setShowForm(true);
-  }
-
-  function openEdit(item: FixedItem) {
-    setEditingId(item.id);
-    setFormData({
-      name: item.name,
-      amount: String(item.amount),
-      type: item.type,
-      day: item.is_last_day ? 'last' : String(item.day_of_month ?? 1),
-    });
-    setShowForm(true);
-  }
-
-  function closeForm() {
-    setShowForm(false);
-    setEditingId(null);
-    setFormData(EMPTY_FORM);
-  }
-
-  async function handleSave() {
-    if (!formData.name.trim() || !formData.amount) return;
-    setSaving(true);
-
-    const isLastDay = formData.day === 'last';
-    const payload = {
-      name: formData.name.trim(),
-      amount: Number(formData.amount),
-      type: formData.type,
-      is_last_day: isLastDay,
-      day_of_month: isLastDay ? null : Number(formData.day),
-    };
-
-    let err;
-    if (editingId) {
-      ({ error: err } = await supabase
-        .from('fixed_items')
-        .update(payload)
-        .eq('id', editingId));
-    } else {
-      ({ error: err } = await supabase.from('fixed_items').insert(payload));
-    }
-
-    if (err) {
-      setError(err.message);
-    } else {
-      await fetchItems();
-      closeForm();
-    }
-    setSaving(false);
-  }
-
-  async function handleDelete(id: string) {
-    if (!confirm('정말 삭제하시겠습니까?')) return;
-    const { error } = await supabase.from('fixed_items').delete().eq('id', id);
-    if (error) {
-      setError(error.message);
-    } else {
-      setItems((prev) => prev.filter((i) => i.id !== id));
-    }
-  }
-
-  const income = items
-    .filter((i) => i.type === 'income')
-    .sort((a, b) => resolveDay(a) - resolveDay(b));
-  const expense = items
-    .filter((i) => i.type === 'expense')
-    .sort((a, b) => resolveDay(a) - resolveDay(b));
-
-  const totalIncome = income.reduce((s, i) => s + i.amount, 0);
-  const totalExpense = expense.reduce((s, i) => s + i.amount, 0);
-  const balance = totalIncome - totalExpense;
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white">
-      {/* Header */}
-      <header className="border-b border-white/10 bg-white/5 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-xl">
-              <Wallet className="w-6 h-6 text-blue-400" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">고정 수입·지출</h1>
-              <p className="text-xs text-slate-400">매월 반복되는 항목 관리</p>
-            </div>
-          </div>
-          <button
-            onClick={openCreate}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 transition-colors rounded-xl px-4 py-2 text-sm font-semibold"
-          >
-            <PlusCircle className="w-4 h-4" />
-            항목 추가
-          </button>
+  if (tablesReady === null) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-sky-600 animate-spin" />
+          <p className="text-sm text-gray-500">연결 중...</p>
         </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-        {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4">
-          <SummaryCard
-            label="총 수입"
-            amount={totalIncome}
-            color="text-emerald-400"
-            bg="bg-emerald-500/10 border-emerald-500/20"
-            icon={<TrendingUp className="w-5 h-5 text-emerald-400" />}
-          />
-          <SummaryCard
-            label="총 지출"
-            amount={totalExpense}
-            color="text-rose-400"
-            bg="bg-rose-500/10 border-rose-500/20"
-            icon={<TrendingDown className="w-5 h-5 text-rose-400" />}
-          />
-          <SummaryCard
-            label="순 잔액"
-            amount={balance}
-            color={balance >= 0 ? 'text-blue-400' : 'text-orange-400'}
-            bg={
-              balance >= 0
-                ? 'bg-blue-500/10 border-blue-500/20'
-                : 'bg-orange-500/10 border-orange-500/20'
-            }
-            icon={<Wallet className="w-5 h-5 text-blue-400" />}
-          />
-        </div>
-
-        {/* Error */}
-        {error && (
-          <div className="bg-rose-500/20 border border-rose-500/40 rounded-xl px-4 py-3 text-rose-300 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* Loading */}
-        {loading ? (
-          <div className="text-center py-20 text-slate-400">불러오는 중…</div>
-        ) : items.length === 0 ? (
-          <div className="text-center py-20 text-slate-500">
-            <CalendarDays className="w-12 h-12 mx-auto mb-3 opacity-40" />
-            <p className="text-sm">아직 항목이 없습니다.</p>
-            <p className="text-xs mt-1">위의 '항목 추가' 버튼을 눌러 시작하세요.</p>
-          </div>
-        ) : (
-          <>
-            <ItemSection
-              title="수입"
-              items={income}
-              color="emerald"
-              onEdit={openEdit}
-              onDelete={handleDelete}
-            />
-            <ItemSection
-              title="지출"
-              items={expense}
-              color="rose"
-              onEdit={openEdit}
-              onDelete={handleDelete}
-            />
-          </>
-        )}
-      </main>
-
-      {/* Form modal */}
-      {showForm && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-          onClick={(e) => e.target === e.currentTarget && closeForm()}
-        >
-          <div className="bg-slate-800 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-              <h2 className="font-semibold text-base">
-                {editingId ? '항목 수정' : '항목 추가'}
-              </h2>
-              <button
-                onClick={closeForm}
-                className="text-slate-400 hover:text-white transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="px-6 py-5 space-y-4">
-              {/* Type */}
-              <div>
-                <label className="text-xs text-slate-400 mb-1.5 block">구분</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(['income', 'expense'] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setFormData((f) => ({ ...f, type: t }))}
-                      className={`py-2 rounded-xl text-sm font-semibold transition-colors border ${
-                        formData.type === t
-                          ? t === 'income'
-                            ? 'bg-emerald-500/20 border-emerald-500/60 text-emerald-300'
-                            : 'bg-rose-500/20 border-rose-500/60 text-rose-300'
-                          : 'border-white/10 text-slate-400 hover:border-white/20'
-                      }`}
-                    >
-                      {t === 'income' ? '수입' : '지출'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Name */}
-              <div>
-                <label className="text-xs text-slate-400 mb-1.5 block">항목명</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="예: 월급, 구독료, 관리비"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500/60"
-                />
-              </div>
-
-              {/* Amount */}
-              <div>
-                <label className="text-xs text-slate-400 mb-1.5 block">금액 (원)</label>
-                <input
-                  type="number"
-                  value={formData.amount}
-                  onChange={(e) => setFormData((f) => ({ ...f, amount: e.target.value }))}
-                  placeholder="0"
-                  min={0}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm placeholder-slate-500 focus:outline-none focus:border-blue-500/60"
-                />
-              </div>
-
-              {/* Day */}
-              <div>
-                <label className="text-xs text-slate-400 mb-1.5 block">발생일</label>
-                <select
-                  value={formData.day}
-                  onChange={(e) => setFormData((f) => ({ ...f, day: e.target.value }))}
-                  className="w-full bg-slate-700 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500/60"
-                >
-                  {Array.from({ length: 31 }, (_, i) => i + 1).map((d) => (
-                    <option key={d} value={String(d)}>
-                      {d}일
-                    </option>
-                  ))}
-                  <option value="last">말일</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="px-6 pb-5 flex gap-3">
-              <button
-                onClick={closeForm}
-                className="flex-1 py-2.5 rounded-xl border border-white/10 text-sm text-slate-400 hover:text-white hover:border-white/20 transition-colors"
-              >
-                취소
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !formData.name.trim() || !formData.amount}
-                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-semibold"
-              >
-                {saving ? '저장 중…' : '저장'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SummaryCard({
-  label,
-  amount,
-  color,
-  bg,
-  icon,
-}: {
-  label: string;
-  amount: number;
-  color: string;
-  bg: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <div className={`rounded-2xl border p-4 ${bg}`}>
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <span className="text-xs text-slate-400">{label}</span>
       </div>
-      <p className={`text-base font-bold ${color} leading-tight`}>
-        {formatKRW(Math.abs(amount))}
-      </p>
-    </div>
-  );
-}
+    );
+  }
 
-function ItemSection({
-  title,
-  items,
-  color,
-  onEdit,
-  onDelete,
-}: {
-  title: string;
-  items: FixedItem[];
-  color: 'emerald' | 'rose';
-  onEdit: (item: FixedItem) => void;
-  onDelete: (id: string) => void;
-}) {
-  if (items.length === 0) return null;
+  if (!tablesReady) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="card max-w-sm w-full text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto">
+            <Database className="w-8 h-8 text-sky-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">초기 설정이 필요합니다</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              앱을 사용하려면 데이터베이스 테이블을 생성해야 합니다.
+            </p>
+          </div>
 
-  const accent = color === 'emerald' ? 'text-emerald-400' : 'text-rose-400';
-  const badge =
-    color === 'emerald'
-      ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
-      : 'bg-rose-500/10 text-rose-300 border-rose-500/20';
+          {setupError && (
+            <div className="flex items-center gap-2 bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{setupError}</span>
+            </div>
+          )}
+
+          <button
+            onClick={handleSetup}
+            disabled={settingUp}
+            className="btn-primary w-full flex items-center justify-center gap-2 py-3"
+          >
+            {settingUp ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                설정 중...
+              </>
+            ) : (
+              '테이블 생성하기'
+            )}
+          </button>
+
+          <p className="text-xs text-gray-400">
+            Supabase 대시보드의 SQL 에디터에서 직접 실행하려면 아래 SQL을 복사하세요.
+          </p>
+          <details className="text-left">
+            <summary className="text-xs text-sky-600 cursor-pointer font-medium">SQL 보기</summary>
+            <pre className="mt-2 text-[10px] bg-gray-50 p-3 rounded-lg overflow-x-auto text-gray-600 leading-relaxed">
+{`CREATE TABLE IF NOT EXISTS accounts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  balance bigint NOT NULL DEFAULT 0,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon read accounts" ON accounts FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow anon insert accounts" ON accounts FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon update accounts" ON accounts FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon delete accounts" ON accounts FOR DELETE TO anon USING (true);
+
+CREATE TABLE IF NOT EXISTS fixed_items (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  amount bigint NOT NULL,
+  day_of_month integer NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
+  type text NOT NULL CHECK (type IN ('income', 'expense')),
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now()
+);
+ALTER TABLE fixed_items ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow anon read fixed_items" ON fixed_items FOR SELECT TO anon USING (true);
+CREATE POLICY "Allow anon insert fixed_items" ON fixed_items FOR INSERT TO anon WITH CHECK (true);
+CREATE POLICY "Allow anon update fixed_items" ON fixed_items FOR UPDATE TO anon USING (true) WITH CHECK (true);
+CREATE POLICY "Allow anon delete fixed_items" ON fixed_items FOR DELETE TO anon USING (true);`}
+            </pre>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'dashboard': return <DashboardView />;
+      case 'calendar': return <CalendarView />;
+      case 'balance': return <BalanceCheck />;
+      case 'items': return <FixedItemManager />;
+      case 'accounts': return <AccountManager />;
+    }
+  };
 
   return (
-    <section>
-      <h2 className={`text-sm font-semibold mb-3 ${accent}`}>{title}</h2>
-      <ul className="space-y-2">
-        {items.map((item) => (
-          <li
-            key={item.id}
-            className="flex items-center justify-between bg-white/5 hover:bg-white/8 border border-white/10 rounded-2xl px-4 py-3 transition-colors"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span
-                className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-lg border ${badge}`}
-              >
-                {formatDay(item)}
-              </span>
-              <span className="text-sm font-medium truncate">{item.name}</span>
-            </div>
-            <div className="flex items-center gap-3 shrink-0 ml-2">
-              <span className={`text-sm font-semibold ${accent}`}>
-                {formatKRW(item.amount)}
-              </span>
-              <button
-                onClick={() => onEdit(item)}
-                className="text-slate-400 hover:text-white transition-colors"
-                aria-label="수정"
-              >
-                <Pencil className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => onDelete(item.id)}
-                className="text-slate-400 hover:text-rose-400 transition-colors"
-                aria-label="삭제"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className="min-h-screen bg-gray-50">
+      {/* Desktop layout: sidebar + content */}
+      <div className="hidden md:flex">
+        {/* Sidebar */}
+        <aside className="fixed left-0 top-0 bottom-0 w-56 bg-white border-r border-gray-100 flex flex-col z-20">
+          <div className="px-5 py-5 border-b border-gray-100">
+            <h1 className="text-base font-bold text-gray-900 tracking-tight">고정지출 가계부</h1>
+          </div>
+          <nav className="flex-1 px-3 py-4 space-y-1">
+            {SIDEBAR_ITEMS.map(item => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setActiveTab(item.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    isActive
+                      ? 'bg-sky-50 text-sky-700'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-sky-600' : ''}`} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="px-5 py-4 border-t border-gray-100">
+            <p className="text-[10px] text-gray-400">Fixed Expense Budget</p>
+          </div>
+        </aside>
+
+        {/* Main content */}
+        <main className="ml-56 flex-1 min-h-screen p-6 lg:p-8 overflow-auto">
+          <div className="max-w-5xl mx-auto">
+            {renderContent()}
+          </div>
+        </main>
+      </div>
+
+      {/* Mobile layout: header + content + bottom tabs */}
+      <div className="md:hidden">
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-lg border-b border-gray-100">
+          <div className="max-w-lg mx-auto px-4 py-3">
+            <h1 className="text-lg font-bold text-gray-900 tracking-tight">고정지출 가계부</h1>
+          </div>
+        </header>
+
+        <main className="max-w-lg mx-auto px-4 py-4 pb-24">
+          {activeTab === 'calendar' && <CalendarView />}
+          {activeTab === 'balance' && <BalanceCheck />}
+          {activeTab === 'items' && <FixedItemManager />}
+          {activeTab === 'accounts' && <AccountManager />}
+        </main>
+
+        <nav className="fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-lg border-t border-gray-100 safe-area-bottom">
+          <div className="max-w-lg mx-auto flex">
+            {MOBILE_TABS.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors ${
+                    isActive ? 'text-sky-700' : 'text-gray-400 hover:text-gray-500'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 transition-transform ${isActive ? 'scale-110' : ''}`} />
+                  <span className={`text-[10px] font-medium ${isActive ? 'font-semibold' : ''}`}>
+                    {tab.label}
+                  </span>
+                  {isActive && (
+                    <div className="w-1 h-1 rounded-full bg-sky-700 -mt-0.5" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
+    </div>
   );
 }

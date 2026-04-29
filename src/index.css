@@ -1,3 +1,68 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --color-primary: #1a1a2e;
+    --color-primary-light: #16213e;
+    --color-accent: #0284c7;
+    --color-accent-light: #38bdf8;
+    --color-income: #0284c7;
+    --color-income-light: #e0f2fe;
+    --color-expense: #dc2626;
+    --color-expense-light: #fee2e2;
+    --color-warning: #f59e0b;
+    --color-warning-light: #fef3c7;
+    --color-bg: #f8fafc;
+    --color-card: #ffffff;
+    --color-text: #1e293b;
+    --color-text-secondary: #64748b;
+    --color-border: #e2e8f0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-2xl shadow-sm border border-gray-100 p-5 transition-shadow hover:shadow-md;
+  }
+
+  .btn-primary {
+    @apply bg-sky-600 text-white px-4 py-2.5 rounded-xl font-medium text-sm
+    hover:bg-sky-700 active:scale-[0.98] transition-all duration-150;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-700 px-4 py-2.5 rounded-xl font-medium text-sm
+    hover:bg-gray-200 active:scale-[0.98] transition-all duration-150;
+  }
+
+  .btn-danger {
+    @apply bg-red-50 text-red-600 px-4 py-2.5 rounded-xl font-medium text-sm
+    hover:bg-red-100 active:scale-[0.98] transition-all duration-150;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50
+    focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500
+    transition-all duration-150 text-sm;
+  }
+
+  .select-field {
+    @apply w-full px-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50
+    focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500
+    transition-all duration-150 text-sm appearance-none;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-600 mb-1.5;
+  }
+}
