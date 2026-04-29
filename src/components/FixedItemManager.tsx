@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, Pencil, Trash2, TrendingUp, TrendingDown, Check, X, Repeat, CalendarClock } from 'lucide-react';
 import { Account, FixedItem, fetchAccounts, fetchFixedItems, createFixedItem, updateFixedItem, deleteFixedItem } from '../lib/supabase';
-import { formatWon, getToday } from '../lib/utils';
+import { formatWon, getToday, getDaysInMonth } from '../lib/utils';
 import { getAdjustedDay } from '../lib/holidays';
 
 export default function FixedItemManager() {
@@ -51,11 +51,12 @@ export default function FixedItemManager() {
   const handleSubmit = async () => {
     const name = formName.trim();
     const amount = parseInt(formAmount.replace(/,/g, ''), 10);
-    const day = parseInt(formDay, 10);
-    if (!name || isNaN(amount) || isNaN(day) || !formAccountId) return;
+    const isLastDay = formDay === 'last';
+    const day = isLastDay ? null : parseInt(formDay, 10);
+    if (!name || isNaN(amount) || (!isLastDay && isNaN(day as number)) || !formAccountId) return;
 
     try {
-      const item = { name, amount, day_of_month: day, type: formType, account_id: formAccountId };
+      const item = { name, amount, day_of_month: day, is_last_day: isLastDay, type: formType, account_id: formAccountId };
       if (editingId) {
         await updateFixedItem(editingId, item);
       } else {
@@ -72,7 +73,7 @@ export default function FixedItemManager() {
     setEditingId(item.id);
     setFormName(item.name);
     setFormAmount(item.amount.toString());
-    setFormDay(item.day_of_month.toString());
+    setFormDay(item.is_last_day ? 'last' : (item.day_of_month ?? 1).toString());
     setFormType(item.type);
     setFormAccountId(item.account_id);
     setShowForm(true);
@@ -95,13 +96,20 @@ export default function FixedItemManager() {
   const itemAdjustments = useMemo(() => {
     const map = new Map<string, { adjustedDay: number; wasAdjusted: boolean; reason: string | null }>();
     items.forEach(item => {
-      const adj = getAdjustedDay(today.year, today.month, item.day_of_month);
+      const day = item.is_last_day
+        ? getDaysInMonth(today.year, today.month)
+        : (item.day_of_month ?? 1);
+      const adj = getAdjustedDay(today.year, today.month, day);
       map.set(item.id, adj);
     });
     return map;
   }, [items, today.year, today.month]);
 
   const formDayAdjustment = useMemo(() => {
+    if (formDay === 'last') {
+      const lastDay = getDaysInMonth(today.year, today.month);
+      return getAdjustedDay(today.year, today.month, lastDay);
+    }
     const day = parseInt(formDay, 10);
     if (isNaN(day) || day < 1 || day > 31) return null;
     return getAdjustedDay(today.year, today.month, day);
@@ -172,7 +180,7 @@ export default function FixedItemManager() {
                 <div className="min-w-0">
                   <p className="font-medium text-sm truncate">{item.name}</p>
                   <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    <span className="text-xs text-gray-400">매월 {item.day_of_month}일</span>
+                    <span className="text-xs text-gray-400">매월 {item.is_last_day ? '말일' : `${item.day_of_month}일`}</span>
                     {adj && adj.wasAdjusted && (
                       <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md inline-flex items-center gap-0.5" title={adj.reason ?? ''}>
                         <CalendarClock className="w-3 h-3" />
@@ -272,6 +280,7 @@ export default function FixedItemManager() {
               {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
                 <option key={d} value={d}>{d}일</option>
               ))}
+              <option value="last">말일</option>
             </select>
             {formDayAdjustment && formDayAdjustment.wasAdjusted && (
               <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">

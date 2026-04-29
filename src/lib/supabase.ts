@@ -16,7 +16,8 @@ export interface FixedItem {
   id: string;
   name: string;
   amount: number;
-  day_of_month: number;
+  day_of_month: number | null;
+  is_last_day: boolean;
   type: 'income' | 'expense';
   account_id: string;
   created_at: string;
@@ -89,6 +90,7 @@ export async function fetchFixedItems(): Promise<FixedItem[]> {
   const { data, error } = await supabase
     .from('fixed_items')
     .select('*')
+    .order('is_last_day', { ascending: true })
     .order('day_of_month', { ascending: true });
   if (error) throw error;
   return data ?? [];
