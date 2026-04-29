@@ -117,10 +117,15 @@ CREATE TABLE IF NOT EXISTS fixed_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   amount bigint NOT NULL,
-  day_of_month integer NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
+  day_of_month integer,
+  is_last_day boolean NOT NULL DEFAULT false,
   type text NOT NULL CHECK (type IN ('income', 'expense')),
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-  created_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now(),
+  CONSTRAINT fixed_items_day_of_month_check CHECK (
+    (is_last_day = true AND day_of_month IS NULL) OR
+    (is_last_day = false AND day_of_month IS NOT NULL AND day_of_month >= 1 AND day_of_month <= 31)
+  )
 );
 ALTER TABLE fixed_items ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Allow anon read fixed_items" ON fixed_items FOR SELECT TO anon USING (true);
