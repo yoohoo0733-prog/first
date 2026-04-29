@@ -9,10 +9,11 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 interface CalendarViewProps {
   selectedDay?: number | null;
   onDaySelect?: (day: number | null) => void;
+  onMonthChange?: (year: number, month: number) => void;
   compact?: boolean;
 }
 
-export default function CalendarView({ selectedDay: externalDay, onDaySelect, compact }: CalendarViewProps) {
+export default function CalendarView({ selectedDay: externalDay, onDaySelect, onMonthChange, compact }: CalendarViewProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<FixedItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,8 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, co
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => { onMonthChange?.(year, month); }, [year, month, onMonthChange]);
+
   const prevMonth = () => {
     if (month === 0) { setYear(y => y - 1); setMonth(11); }
     else setMonth(m => m - 1);
@@ -67,13 +70,14 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, co
   const adjustedItemsMap = useMemo(() => {
     const map = new Map<number, { items: FixedItem[]; originalDay: number; reason: string | null }[]>();
     items.forEach(item => {
-      const adj = getAdjustedDay(year, month, item.day_of_month);
+      const effectiveDay = item.is_last_day ? getDaysInMonth(year, month) : (item.day_of_month ?? 1);
+      const adj = getAdjustedDay(year, month, effectiveDay);
       if (!map.has(adj.adjustedDay)) {
         map.set(adj.adjustedDay, []);
       }
       map.get(adj.adjustedDay)!.push({
         items: [item],
-        originalDay: item.day_of_month,
+        originalDay: effectiveDay,
         reason: adj.reason,
       });
     });

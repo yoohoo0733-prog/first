@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle, CheckCircle2, Building2 } from 'lucide-react';
 import { Account, FixedItem, fetchAccounts, fetchFixedItems } from '../lib/supabase';
-import { formatWon, getToday } from '../lib/utils';
+import { formatWon, getToday, getDaysInMonth } from '../lib/utils';
 import { getAdjustedDay } from '../lib/holidays';
 import CalendarView from './CalendarView';
 
@@ -19,6 +19,8 @@ export default function DashboardView() {
   const [items, setItems] = useState<FixedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [calYear, setCalYear] = useState(getToday().year);
+  const [calMonth, setCalMonth] = useState(getToday().month);
 
   const load = useCallback(async () => {
     try {
@@ -42,16 +44,17 @@ export default function DashboardView() {
   const adjustedItemsMap = useMemo(() => {
     const map = new Map<number, { items: FixedItem[]; adjustments: { originalDay: number; reason: string | null }[] }>();
     items.forEach(item => {
-      const adj = getAdjustedDay(today.year, today.month, item.day_of_month);
+      const effectiveDay = item.is_last_day ? getDaysInMonth(calYear, calMonth) : (item.day_of_month ?? 1);
+      const adj = getAdjustedDay(calYear, calMonth, effectiveDay);
       if (!map.has(adj.adjustedDay)) {
         map.set(adj.adjustedDay, { items: [], adjustments: [] });
       }
       const entry = map.get(adj.adjustedDay)!;
       entry.items.push(item);
-      entry.adjustments.push({ originalDay: item.day_of_month, reason: adj.reason });
+      entry.adjustments.push({ originalDay: effectiveDay, reason: adj.reason });
     });
     return map;
-  }, [items, today.year, today.month]);
+  }, [items, calYear, calMonth]);
 
   const computeAccountBalances = (): AccountBalance[] => {
     return accounts.map(account => {
@@ -59,7 +62,8 @@ export default function DashboardView() {
       const incomeItems = accountItems.filter(i => i.type === 'income');
       const expenseItems = accountItems.filter(i => i.type === 'expense');
       const incomeDays = incomeItems.map(i => {
-        const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
+        const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
+        const adj = getAdjustedDay(today.year, today.month, effectiveDay);
         return adj.adjustedDay;
       }).sort((a, b) => a - b);
 
@@ -83,17 +87,20 @@ export default function DashboardView() {
         if (nextIncomeDay > today.day) {
           totalExpenseUntilNextIncome = expenseItems
             .filter(i => {
-              const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
+              const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
+              const adj = getAdjustedDay(today.year, today.month, effectiveDay);
               return adj.adjustedDay > today.day && adj.adjustedDay <= nextIncomeDay;
             })
             .reduce((s, i) => s + i.amount, 0);
         } else {
           const afterToday = expenseItems.filter(i => {
-            const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
+            const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
+            const adj = getAdjustedDay(today.year, today.month, effectiveDay);
             return adj.adjustedDay > today.day;
           });
           const beforeNext = expenseItems.filter(i => {
-            const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
+            const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
+            const adj = getAdjustedDay(today.year, today.month, effectiveDay);
             return adj.adjustedDay <= nextIncomeDay;
           });
           const allExpenses = [...afterToday, ...beforeNext];
@@ -230,13 +237,18 @@ export default function DashboardView() {
 
       {/* Row 3: Calendar + selected day items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <CalendarView selectedDay={selectedDay} onDaySelect={setSelectedDay} compact />
+        <CalendarView
+          selectedDay={selectedDay}
+          onDaySelect={setSelectedDay}
+          onMonthChange={(y, m) => { setCalYear(y); setCalMonth(m); }}
+          compact
+        />
 
         <div className="card">
           {selectedDay !== null ? (
             <>
               <div className="flex items-center gap-2 mb-3">
-                <h3 className="font-semibold text-sm">{today.month + 1}월 {selectedDay}일 항목</h3>
+                <h3 className="font-semibold text-sm">{calMonth + 1}월 {selectedDay}일 항목</h3>
                 {selectedAdjustments.some(a => a.originalDay !== selectedDay) && (
                   <span className="text-[10px] font-medium text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">조정됨</span>
                 )}
