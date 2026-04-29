@@ -3,6 +3,8 @@ import { isHoliday, isBusinessDay } from 'korean-holidays';
 export interface AdjustedDate {
   originalDay: number;
   adjustedDay: number;
+  adjustedMonth: number; // 0-indexed; may differ from input when date overflows into next month
+  adjustedYear: number;
   wasAdjusted: boolean;
   reason: string | null;
 }
@@ -47,11 +49,15 @@ export function getAdjustedDay(year: number, month: number, day: number): Adjust
   }
 
   const adjustedDay = current.getDate();
-  const wasAdjusted = adjustedDay !== day;
+  const adjustedMonth = current.getMonth();
+  const adjustedYear = current.getFullYear();
+  const wasAdjusted = adjustedDay !== day || adjustedMonth !== month || adjustedYear !== year;
 
   return {
     originalDay: day,
     adjustedDay,
+    adjustedMonth,
+    adjustedYear,
     wasAdjusted,
     reason: wasAdjusted ? reason : null,
   };

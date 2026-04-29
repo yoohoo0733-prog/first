@@ -69,18 +69,27 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, on
 
   const adjustedItemsMap = useMemo(() => {
     const map = new Map<number, { items: FixedItem[]; originalDay: number; reason: string | null }[]>();
+
+    const addToMap = (item: FixedItem, effectiveDay: number, srcYear: number, srcMonth: number) => {
+      const adj = getAdjustedDay(srcYear, srcMonth, effectiveDay);
+      if (adj.adjustedYear !== year || adj.adjustedMonth !== month) return;
+      if (!map.has(adj.adjustedDay)) map.set(adj.adjustedDay, []);
+      map.get(adj.adjustedDay)!.push({ items: [item], originalDay: effectiveDay, reason: adj.reason });
+    };
+
     items.forEach(item => {
-      const effectiveDay = item.is_last_day ? getDaysInMonth(year, month) : (item.day_of_month ?? 1);
-      const adj = getAdjustedDay(year, month, effectiveDay);
-      if (!map.has(adj.adjustedDay)) {
-        map.set(adj.adjustedDay, []);
+      if (item.is_last_day) {
+        // Current month's last day — include only if adjusted date stays in this month
+        addToMap(item, getDaysInMonth(year, month), year, month);
+        // Previous month's last day — include if it overflows into this month
+        const prevYear = month === 0 ? year - 1 : year;
+        const prevMonth = month === 0 ? 11 : month - 1;
+        addToMap(item, getDaysInMonth(prevYear, prevMonth), prevYear, prevMonth);
+      } else {
+        addToMap(item, item.day_of_month ?? 1, year, month);
       }
-      map.get(adj.adjustedDay)!.push({
-        items: [item],
-        originalDay: effectiveDay,
-        reason: adj.reason,
-      });
     });
+
     const merged = new Map<number, { items: FixedItem[]; adjustments: { originalDay: number; reason: string | null }[] }>();
     map.forEach((entries, adjDay) => {
       const allItems: FixedItem[] = [];

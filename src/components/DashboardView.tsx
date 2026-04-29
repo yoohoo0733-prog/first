@@ -43,16 +43,27 @@ export default function DashboardView() {
 
   const adjustedItemsMap = useMemo(() => {
     const map = new Map<number, { items: FixedItem[]; adjustments: { originalDay: number; reason: string | null }[] }>();
-    items.forEach(item => {
-      const effectiveDay = item.is_last_day ? getDaysInMonth(calYear, calMonth) : (item.day_of_month ?? 1);
-      const adj = getAdjustedDay(calYear, calMonth, effectiveDay);
-      if (!map.has(adj.adjustedDay)) {
-        map.set(adj.adjustedDay, { items: [], adjustments: [] });
-      }
+
+    const addToMap = (item: FixedItem, effectiveDay: number, srcYear: number, srcMonth: number) => {
+      const adj = getAdjustedDay(srcYear, srcMonth, effectiveDay);
+      if (adj.adjustedYear !== calYear || adj.adjustedMonth !== calMonth) return;
+      if (!map.has(adj.adjustedDay)) map.set(adj.adjustedDay, { items: [], adjustments: [] });
       const entry = map.get(adj.adjustedDay)!;
       entry.items.push(item);
       entry.adjustments.push({ originalDay: effectiveDay, reason: adj.reason });
+    };
+
+    items.forEach(item => {
+      if (item.is_last_day) {
+        addToMap(item, getDaysInMonth(calYear, calMonth), calYear, calMonth);
+        const prevYear = calMonth === 0 ? calYear - 1 : calYear;
+        const prevMonth = calMonth === 0 ? 11 : calMonth - 1;
+        addToMap(item, getDaysInMonth(prevYear, prevMonth), prevYear, prevMonth);
+      } else {
+        addToMap(item, item.day_of_month ?? 1, calYear, calMonth);
+      }
     });
+
     return map;
   }, [items, calYear, calMonth]);
 
