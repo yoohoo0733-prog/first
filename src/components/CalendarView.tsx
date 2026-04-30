@@ -2,27 +2,43 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Account, FixedItem, fetchAccounts, fetchFixedItems } from '../lib/supabase';
 import { formatWon, getDaysInMonth, getFirstDayOfMonth, getToday } from '../lib/utils';
-import { getAdjustedDay, getHolidayName } from '../lib/holidays';
+import { getItemAdjustedDay, getHolidayName } from '../lib/holidays';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 interface CalendarViewProps {
   selectedDay?: number | null;
   onDaySelect?: (day: number | null) => void;
+  // If provided, calendar is controlled by parent; nav buttons call onMonthChange directly
+  controlledYear?: number;
+  controlledMonth?: number;
   onMonthChange?: (year: number, month: number) => void;
   compact?: boolean;
 }
 
-export default function CalendarView({ selectedDay: externalDay, onDaySelect, onMonthChange, compact }: CalendarViewProps) {
+export default function CalendarView({
+  selectedDay: externalDay,
+  onDaySelect,
+  controlledYear,
+  controlledMonth,
+  onMonthChange,
+  compact,
+}: CalendarViewProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [items, setItems] = useState<FixedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tooltip, setTooltip] = useState<{ day: number; text: string } | null>(null);
   const today = getToday();
-  const [year, setYear] = useState(today.year);
-  const [month, setMonth] = useState(today.month);
+
+  // Uncontrolled internal state (used when controlledYear/Month not provided)
+  const [internalYear, setInternalYear] = useState(today.year);
+  const [internalMonth, setInternalMonth] = useState(today.month);
   const [internalDay, setInternalDay] = useState<number | null>(today.day);
+
+  const isControlled = controlledYear !== undefined && controlledMonth !== undefined;
+  const year = isControlled ? controlledYear! : internalYear;
+  const month = isControlled ? controlledMonth! : internalMonth;
 
   const selectedDay = externalDay !== undefined ? externalDay : internalDay;
   const setSelectedDay = onDaySelect ?? setInternalDay;
@@ -43,23 +59,42 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, on
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => { onMonthChange?.(year, month); }, [year, month, onMonthChange]);
+  // Notify parent of month changes in uncontrolled mode only
+  useEffect(() => {
+    if (!isControlled) onMonthChange?.(internalYear, internalMonth);
+  }, [internalYear, internalMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const prevMonth = () => {
-    if (month === 0) { setYear(y => y - 1); setMonth(11); }
-    else setMonth(m => m - 1);
+    const newYear = month === 0 ? year - 1 : year;
+    const newMonth = month === 0 ? 11 : month - 1;
+    if (isControlled) {
+      onMonthChange?.(newYear, newMonth);
+    } else {
+      setInternalYear(newYear);
+      setInternalMonth(newMonth);
+    }
     setSelectedDay(null);
   };
 
   const nextMonth = () => {
-    if (month === 11) { setYear(y => y + 1); setMonth(0); }
-    else setMonth(m => m + 1);
+    const newYear = month === 11 ? year + 1 : year;
+    const newMonth = month === 11 ? 0 : month + 1;
+    if (isControlled) {
+      onMonthChange?.(newYear, newMonth);
+    } else {
+      setInternalYear(newYear);
+      setInternalMonth(newMonth);
+    }
     setSelectedDay(null);
   };
 
   const goToToday = () => {
-    setYear(today.year);
-    setMonth(today.month);
+    if (isControlled) {
+      onMonthChange?.(today.year, today.month);
+    } else {
+      setInternalYear(today.year);
+      setInternalMonth(today.month);
+    }
     setSelectedDay(today.day);
   };
 
@@ -71,7 +106,7 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, on
     const map = new Map<number, { items: FixedItem[]; originalDay: number; reason: string | null }[]>();
 
     const addToMap = (item: FixedItem, effectiveDay: number, srcYear: number, srcMonth: number) => {
-      const adj = getAdjustedDay(srcYear, srcMonth, effectiveDay);
+      const adj = getItemAdjustedDay(item.category, srcYear, srcMonth, effectiveDay);
       if (adj.adjustedYear !== year || adj.adjustedMonth !== month) return;
       if (!map.has(adj.adjustedDay)) map.set(adj.adjustedDay, []);
       map.get(adj.adjustedDay)!.push({ items: [item], originalDay: effectiveDay, reason: adj.reason });
@@ -79,9 +114,7 @@ export default function CalendarView({ selectedDay: externalDay, onDaySelect, on
 
     items.forEach(item => {
       if (item.is_last_day) {
-        // Current month's last day — include only if adjusted date stays in this month
         addToMap(item, getDaysInMonth(year, month), year, month);
-        // Previous month's last day — include if it overflows into this month
         const prevYear = month === 0 ? year - 1 : year;
         const prevMonth = month === 0 ? 11 : month - 1;
         addToMap(item, getDaysInMonth(prevYear, prevMonth), prevYear, prevMonth);

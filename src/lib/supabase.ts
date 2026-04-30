@@ -19,6 +19,7 @@ export interface FixedItem {
   day_of_month: number | null;
   is_last_day: boolean;
   type: 'income' | 'expense';
+  category: 'salary' | 'card' | 'regular';
   account_id: string;
   created_at: string;
 }

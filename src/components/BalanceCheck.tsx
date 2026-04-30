@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle, CheckCircle2, Wallet, TrendingUp, TrendingDown, Info } from 'lucide-react';
 import { Account, FixedItem, fetchAccounts, fetchFixedItems } from '../lib/supabase';
-import { formatWon, getToday } from '../lib/utils';
-import { getAdjustedDay } from '../lib/holidays';
+import { formatWon, getToday, getDaysInMonth } from '../lib/utils';
+import { getItemAdjustedDay } from '../lib/holidays';
 
 interface AccountBalance {
   account: Account;
@@ -39,6 +39,11 @@ export default function BalanceCheck() {
 
   const today = getToday();
 
+  const getEffectiveAdj = (item: FixedItem) => {
+    const day = item.is_last_day ? getDaysInMonth(today.year, today.month) : (item.day_of_month ?? 1);
+    return getItemAdjustedDay(item.category, today.year, today.month, day);
+  };
+
   const computeAccountBalances = (): AccountBalance[] => {
     return accounts.map(account => {
       const accountItems = items.filter(i => i.account_id === account.id);
@@ -46,8 +51,9 @@ export default function BalanceCheck() {
       const expenseItems = accountItems.filter(i => i.type === 'expense');
 
       const incomeDays = incomeItems.map(i => {
-        const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
-        return { adjusted: adj.adjustedDay, original: i.day_of_month };
+        const adj = getEffectiveAdj(i);
+        const originalDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
+        return { adjusted: adj.adjustedDay, original: originalDay };
       }).sort((a, b) => a.adjusted - b.adjusted);
 
       let nextIncomeDay: number | null = null;
@@ -73,19 +79,13 @@ export default function BalanceCheck() {
         if (nextIncomeDay > today.day) {
           totalExpenseUntilNextIncome = expenseItems
             .filter(i => {
-              const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
-              return adj.adjustedDay > today.day && adj.adjustedDay <= nextIncomeDay;
+              const adj = getEffectiveAdj(i);
+              return adj.adjustedDay > today.day && adj.adjustedDay <= nextIncomeDay!;
             })
             .reduce((s, i) => s + i.amount, 0);
         } else {
-          const afterToday = expenseItems.filter(i => {
-            const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
-            return adj.adjustedDay > today.day;
-          });
-          const beforeNext = expenseItems.filter(i => {
-            const adj = getAdjustedDay(today.year, today.month, i.day_of_month);
-            return adj.adjustedDay <= nextIncomeDay;
-          });
+          const afterToday = expenseItems.filter(i => getEffectiveAdj(i).adjustedDay > today.day);
+          const beforeNext = expenseItems.filter(i => getEffectiveAdj(i).adjustedDay <= nextIncomeDay!);
           const allExpenses = [...afterToday, ...beforeNext];
           const seen = new Set<string>();
           const unique = allExpenses.filter(i => {
@@ -171,7 +171,7 @@ export default function BalanceCheck() {
               <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-700 leading-relaxed">
                 오늘({today.month + 1}월 {today.day}일) 기준으로, 다음 수입일까지 각 통장에서 나갈 고정지출 합계를 계산합니다.
-                주말 및 공휴일 조정이 적용된 날짜를 기준으로 합니다. 잔고가 부족한 통장은 빨간색으로 표시됩니다.
+                월급은 이전 영업일 기준, 카드·일반 항목은 다음 영업일 기준으로 조정됩니다.
               </p>
             </div>
           </div>
@@ -229,13 +229,14 @@ export default function BalanceCheck() {
                     <div className="mt-2 space-y-1">
                       <p className="text-xs text-gray-400 font-medium mb-1">지출 항목 상세</p>
                       {expenseItems.map(item => {
-                        const adj = getAdjustedDay(today.year, today.month, item.day_of_month);
+                        const adj = getEffectiveAdj(item);
+                        const originalDay = item.is_last_day ? getDaysInMonth(today.year, today.month) : (item.day_of_month ?? 1);
                         return (
                           <div key={item.id} className="flex items-center justify-between py-1">
                             <span className="text-xs text-gray-500">
-                              {item.name} ({item.day_of_month}일
+                              {item.name} ({item.is_last_day ? '말일' : `${originalDay}일`}
                               {adj.wasAdjusted && (
-                                <span className="text-amber-600"> &rarr; {adj.adjustedDay}일</span>
+                                <span className="text-amber-600"> → {adj.adjustedDay}일</span>
                               )})
                             </span>
                             <span className="text-xs text-red-500 font-medium">-{formatWon(item.amount)}</span>
@@ -249,13 +250,14 @@ export default function BalanceCheck() {
                     <div className="mt-2 space-y-1 border-t border-gray-100 pt-2">
                       <p className="text-xs text-gray-400 font-medium mb-1">수입 항목</p>
                       {incomeItems.map(item => {
-                        const adj = getAdjustedDay(today.year, today.month, item.day_of_month);
+                        const adj = getEffectiveAdj(item);
+                        const originalDay = item.is_last_day ? getDaysInMonth(today.year, today.month) : (item.day_of_month ?? 1);
                         return (
                           <div key={item.id} className="flex items-center justify-between py-1">
                             <span className="text-xs text-gray-500">
-                              {item.name} ({item.day_of_month}일
+                              {item.name} ({item.is_last_day ? '말일' : `${originalDay}일`}
                               {adj.wasAdjusted && (
-                                <span className="text-amber-600"> &rarr; {adj.adjustedDay}일</span>
+                                <span className="text-amber-600"> → {adj.adjustedDay}일</span>
                               )})
                             </span>
                             <span className="text-xs text-sky-500 font-medium">+{formatWon(item.amount)}</span>

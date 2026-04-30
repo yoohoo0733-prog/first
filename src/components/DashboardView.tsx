@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { TrendingUp, TrendingDown, Wallet, AlertTriangle, CheckCircle2, Building2 } from 'lucide-react';
 import { Account, FixedItem, fetchAccounts, fetchFixedItems } from '../lib/supabase';
 import { formatWon, getToday, getDaysInMonth } from '../lib/utils';
-import { getAdjustedDay } from '../lib/holidays';
+import { getItemAdjustedDay } from '../lib/holidays';
 import CalendarView from './CalendarView';
 
 interface AccountBalance {
@@ -45,7 +45,7 @@ export default function DashboardView() {
     const map = new Map<number, { items: FixedItem[]; adjustments: { originalDay: number; reason: string | null }[] }>();
 
     const addToMap = (item: FixedItem, effectiveDay: number, srcYear: number, srcMonth: number) => {
-      const adj = getAdjustedDay(srcYear, srcMonth, effectiveDay);
+      const adj = getItemAdjustedDay(item.category, srcYear, srcMonth, effectiveDay);
       if (adj.adjustedYear !== calYear || adj.adjustedMonth !== calMonth) return;
       if (!map.has(adj.adjustedDay)) map.set(adj.adjustedDay, { items: [], adjustments: [] });
       const entry = map.get(adj.adjustedDay)!;
@@ -72,9 +72,10 @@ export default function DashboardView() {
       const accountItems = items.filter(i => i.account_id === account.id);
       const incomeItems = accountItems.filter(i => i.type === 'income');
       const expenseItems = accountItems.filter(i => i.type === 'expense');
+
       const incomeDays = incomeItems.map(i => {
         const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
-        const adj = getAdjustedDay(today.year, today.month, effectiveDay);
+        const adj = getItemAdjustedDay(i.category, today.year, today.month, effectiveDay);
         return adj.adjustedDay;
       }).sort((a, b) => a - b);
 
@@ -99,20 +100,20 @@ export default function DashboardView() {
           totalExpenseUntilNextIncome = expenseItems
             .filter(i => {
               const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
-              const adj = getAdjustedDay(today.year, today.month, effectiveDay);
-              return adj.adjustedDay > today.day && adj.adjustedDay <= nextIncomeDay;
+              const adj = getItemAdjustedDay(i.category, today.year, today.month, effectiveDay);
+              return adj.adjustedDay > today.day && adj.adjustedDay <= nextIncomeDay!;
             })
             .reduce((s, i) => s + i.amount, 0);
         } else {
           const afterToday = expenseItems.filter(i => {
             const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
-            const adj = getAdjustedDay(today.year, today.month, effectiveDay);
+            const adj = getItemAdjustedDay(i.category, today.year, today.month, effectiveDay);
             return adj.adjustedDay > today.day;
           });
           const beforeNext = expenseItems.filter(i => {
             const effectiveDay = i.is_last_day ? getDaysInMonth(today.year, today.month) : (i.day_of_month ?? 1);
-            const adj = getAdjustedDay(today.year, today.month, effectiveDay);
-            return adj.adjustedDay <= nextIncomeDay;
+            const adj = getItemAdjustedDay(i.category, today.year, today.month, effectiveDay);
+            return adj.adjustedDay <= nextIncomeDay!;
           });
           const allExpenses = [...afterToday, ...beforeNext];
           const seen = new Set<string>();
@@ -249,6 +250,8 @@ export default function DashboardView() {
       {/* Row 3: Calendar + selected day items */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <CalendarView
+          controlledYear={calYear}
+          controlledMonth={calMonth}
           selectedDay={selectedDay}
           onDaySelect={setSelectedDay}
           onMonthChange={(y, m) => { setCalYear(y); setCalMonth(m); }}
