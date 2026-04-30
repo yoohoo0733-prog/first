@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getCategory, setCategory, removeCategory } from './categoryStore';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -19,7 +20,7 @@ export interface FixedItem {
   day_of_month: number | null;
   is_last_day: boolean;
   type: 'income' | 'expense';
-  category: 'salary' | 'card' | 'regular';
+  category: 'salary' | 'card' | 'regular'; // stored in localStorage, not in DB
   account_id: string;
   created_at: string;
 }
@@ -94,28 +95,34 @@ export async function fetchFixedItems(): Promise<FixedItem[]> {
     .order('is_last_day', { ascending: true })
     .order('day_of_month', { ascending: true });
   if (error) throw error;
-  return data ?? [];
+  // category is not a DB column — enrich from localStorage
+  return (data ?? []).map(item => ({ ...item, category: getCategory(item.id) }));
 }
 
+// Strip category before sending to DB; persist it in localStorage instead
 export async function createFixedItem(item: Omit<FixedItem, 'id' | 'created_at'>): Promise<FixedItem> {
+  const { category, ...dbItem } = item;
   const { data, error } = await supabase
     .from('fixed_items')
-    .insert(item)
+    .insert(dbItem)
     .select()
     .single();
   if (error) throw error;
-  return data;
+  setCategory(data.id, category ?? 'regular');
+  return { ...data, category: category ?? 'regular' };
 }
 
 export async function updateFixedItem(id: string, item: Omit<FixedItem, 'id' | 'created_at'>): Promise<FixedItem> {
+  const { category, ...dbItem } = item;
   const { data, error } = await supabase
     .from('fixed_items')
-    .update(item)
+    .update(dbItem)
     .eq('id', id)
     .select()
     .single();
   if (error) throw error;
-  return data;
+  setCategory(id, category ?? 'regular');
+  return { ...data, category: category ?? 'regular' };
 }
 
 export async function deleteFixedItem(id: string): Promise<void> {
@@ -124,4 +131,5 @@ export async function deleteFixedItem(id: string): Promise<void> {
     .delete()
     .eq('id', id);
   if (error) throw error;
+  removeCategory(id);
 }
