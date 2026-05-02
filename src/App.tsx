@@ -200,7 +200,7 @@ CREATE POLICY "Allow anon delete fixed_items" ON fixed_items FOR DELETE TO anon 
         </header>
 
         <main className="max-w-lg mx-auto px-4 py-4 pb-24">
-          {activeTab === 'calendar' && <CalendarView />}
+          {(activeTab === 'calendar' || activeTab === 'dashboard') && <CalendarView />}
           {activeTab === 'balance' && <BalanceCheck />}
           {activeTab === 'items' && <FixedItemManager />}
           {activeTab === 'accounts' && <AccountManager />}
@@ -210,7 +210,9 @@ CREATE POLICY "Allow anon delete fixed_items" ON fixed_items FOR DELETE TO anon 
           <div className="max-w-lg mx-auto flex">
             {MOBILE_TABS.map(tab => {
               const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
+              // 'dashboard' is not a mobile tab; treat it as 'calendar' for highlight purposes
+              const effectiveTab = activeTab === 'dashboard' ? 'calendar' : activeTab;
+              const isActive = effectiveTab === tab.id;
               return (
                 <button
                   key={tab.id}
